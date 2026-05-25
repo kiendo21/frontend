@@ -7,7 +7,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'https://backend-ashen-two-13.vercel.app/',
         changeOrigin: true,
         secure: false,
       }
