@@ -15,7 +15,6 @@ export default function Home({ onGoBrowse, onGoMovie, onGoAuth }) {
   const [topMovies, setTopMovies] = useState([]);
   const [topTV, setTopTV] = useState([]);
   const [weeklyFavorites, setWeeklyFavorites] = useState([]);
-  const [localLoading, setLocalLoading] = useState(true);
   const [isTrailerOpen, setIsTrailerOpen] = useState(false);
 
   const hotMovies = hotMoviesDetailed.length > 0 ? hotMoviesDetailed : trending.slice(0, 5);
@@ -26,7 +25,6 @@ export default function Home({ onGoBrowse, onGoMovie, onGoAuth }) {
     let cancelled = false;
     (async () => {
       try {
-        setLocalLoading(true);
         // Fetch detailed data for hot movies to get trailers & durations
         const trendingSlice = trending.slice(0, 5);
 
@@ -45,8 +43,6 @@ export default function Home({ onGoBrowse, onGoMovie, onGoAuth }) {
         setWeeklyFavorites((weekTrend.results || []).slice(0, 5).map(m => mapMovieFromList(m, genreMap)));
       } catch (err) {
         console.error("Home extra fetch error:", err);
-      } finally {
-        if (!cancelled) setLocalLoading(false);
       }
     })();
     return () => { cancelled = true; };
@@ -116,7 +112,10 @@ export default function Home({ onGoBrowse, onGoMovie, onGoAuth }) {
               <button
                 className={`btnGhost ${isInWishlist(heroData.id) ? "is-wishlisted" : ""}`}
                 onClick={() => {
-                  if (!currentUser) onGoAuth();
+                  if (!currentUser) {
+                    alert("Vui lòng đăng nhập để yêu thích phim.");
+                    onGoAuth();
+                  }
                   else toggleWishlist(heroData);
                 }}
                 title="Thêm vào yêu thích"
@@ -171,7 +170,10 @@ export default function Home({ onGoBrowse, onGoMovie, onGoAuth }) {
               onGoMovie={onGoMovie}
               isInWishlist={isInWishlist(movie.id)}
               onToggleWishlist={() => {
-                if (!currentUser) onGoAuth();
+                if (!currentUser) {
+                  alert("Vui lòng đăng nhập để yêu thích phim.");
+                  onGoAuth();
+                }
                 else toggleWishlist(movie);
               }}
             />

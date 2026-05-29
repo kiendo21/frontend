@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback } from "react";
 import { useApp } from "../context.jsx";
 import MovieCard from "../components/MovieCard.jsx";
 import TrailerModal from "../components/TrailerModal.jsx";
-import { mapMovieFromList, fetchByGenre, fetchPersonMovies, fetchPersonDetail } from "../tmdb.js";
+import { mapMovieFromList, fetchByGenre } from "../tmdb.js";
+import { api } from "../api.js";
 
 export default function MovieDetail({ movieId, onGoBack, onGoMovie, onGoPerson, onGoAuth }) {
-    const { toggleWishlist, isInWishlist, genreMap, currentUser } = useApp();
+    const { toggleWishlist, isInWishlist, genreMap, currentUser, addHistory, addComment, saveRating, myRatings, myReactions, setMovieReaction } = useApp();
     const [movie, setMovie] = useState(null);
     const [related, setRelated] = useState([]);
     const [sameGenre, setSameGenre] = useState([]);
@@ -21,41 +22,131 @@ export default function MovieDetail({ movieId, onGoBack, onGoMovie, onGoPerson, 
     const [newRating, setNewRating] = useState(0);
     const [hoverRating, setHoverRating] = useState(0);
     const [showAllComments, setShowAllComments] = useState(false);
+    const [reactionStats, setReactionStats] = useState(null);
+    const [replyingTo, setReplyingTo] = useState(null);
+    const [replyText, setReplyText] = useState("");
 
-    // Load comments
+    // Load comments from backend
     useEffect(() => {
-        if (movieId) {
-            const saved = localStorage.getItem(`comments_${movieId}`);
-            if (saved) setComments(JSON.parse(saved));
-            else setComments([]);
-            // reset form when movie changes
-            setNewComment("");
-            setNewRating(0);
-        }
+        let cancelled = false;
+        (async () => {
+            if (!movieId) return;
+            try {
+                const result = await api.getComments(movieId);
+                if (!cancelled) setComments(result.data || []);
+            } catch (err) {
+                console.error("Comment fetch error:", err);
+                if (!cancelled) setComments([]);
+            }
+
+            if (!cancelled) {
+                setNewComment("");
+            }
+        })();
+
+        return () => { cancelled = true; };
     }, [movieId]);
 
-    const handleCommentSubmit = (e) => {
-        e.preventDefault();
-        if (!currentUser) {
-            onGoAuth();
-            return;
+    useEffect(() => {
+        setNewRating(myRatings[String(movieId)] || 0);
+    }, [movieId, myRatings]);
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const result = await api.getMovieReaction(movieId);
+                if (!cancelled) setReactionStats(result.data);
+            } catch (err) {
+                console.error("Reaction fetch error:", err);
+            }
+        })();
+
+        return () => { cancelled = true; };
+    }, [movieId]);
+
+    useEffect(() => {
+        if (currentUser && movie) {
+            addHistory(movie);
         }
+    }, [currentUser, movie, addHistory]);
+
+    const requireLogin = (message) => {
+        if (currentUser) return true;
+        alert(message);
+        onGoAuth();
+        return false;
+    };
+
+    const handleRatingClick = async (star) => {
+        if (!requireLogin("Vui lòng đăng nhập để rating phim.")) return;
+        setNewRating(star);
+        try {
+            await saveRating(movieId, star);
+        } catch (err) {
+            alert(err.message || "Không thể lưu rating.");
+        }
+    };
+
+    const handleWatchClick = async () => {
+        if (movie) {
+            await addHistory(movie);
+        }
+    };
+
+    const handleMovieReaction = async (reaction) => {
+        if (!requireLogin("Vui lòng đăng nhập để like/dislike phim.")) return;
+        try {
+            const data = await setMovieReaction(movie, reaction);
+            if (data) setReactionStats(data);
+        } catch (err) {
+            alert(err.message || "Không thể lưu reaction.");
+        }
+    };
+
+    const replaceComment = (updatedComment) => {
+        setComments((prev) => prev.map((comment) => comment._id === updatedComment._id ? updatedComment : comment));
+    };
+
+    const handleCommentLike = async (commentId) => {
+        if (!requireLogin("Vui lòng đăng nhập để like comment.")) return;
+        try {
+            const result = await api.toggleCommentLike(commentId);
+            replaceComment(result.data);
+        } catch (err) {
+            alert(err.message || "Không thể like comment.");
+        }
+    };
+
+    const handleReplySubmit = async (commentId) => {
+        if (!requireLogin("Vui lòng đăng nhập để reply comment.")) return;
+        if (!replyText.trim()) return;
+
+        try {
+            const result = await api.addReply(commentId, replyText);
+            replaceComment(result.data);
+            setReplyText("");
+            setReplyingTo(null);
+        } catch (err) {
+            alert(err.message || "Không thể gửi reply.");
+        }
+    };
+
+    const handleCommentSubmit = async (e) => {
+        e.preventDefault();
+        if (!requireLogin("Vui lòng đăng nhập để bình luận phim.")) return;
         if (!newComment.trim() || newRating === 0) return;
 
-        const commentData = {
-            id: Date.now(),
-            user: currentUser.name, // Use actual username
-            text: newComment,
-            rating: newRating,
-            date: new Date().toLocaleDateString(),
-        };
-
-        const updated = [commentData, ...comments];
-        setComments(updated);
-        localStorage.setItem(`comments_${movieId}`, JSON.stringify(updated));
-
-        setNewComment("");
-        setNewRating(0);
+        try {
+            await saveRating(movieId, newRating);
+            const savedComment = await addComment(movieId, newComment, newRating, movie);
+            if (savedComment) {
+                setComments((prev) => [savedComment, ...prev]);
+                setNewComment("");
+            }
+        } catch (err) {
+            alert(err.message || "Không thể gửi bình luận.");
+        }
     };
 
     // Fetch movie detail
@@ -196,7 +287,7 @@ export default function MovieDetail({ movieId, onGoBack, onGoMovie, onGoPerson, 
                         <p className="detailInfo__desc">{movie.desc}</p>
 
                         <div className="detailInfo__actions">
-                            <button className="btnPrimary btnPrimary--lg">▶ Xem ngay</button>
+                            <button className="btnPrimary btnPrimary--lg" onClick={handleWatchClick}>▶ Xem ngay</button>
                             {movie.trailerKey && (
                                 <button
                                     className="btnPrimary btnPrimary--lg btnTrailer"
@@ -210,6 +301,7 @@ export default function MovieDetail({ movieId, onGoBack, onGoMovie, onGoPerson, 
                                 className={`btnGhost btnGhost--lg ${inWishlist ? "is-wishlisted" : ""}`}
                                 onClick={() => {
                                     if (!currentUser) {
+                                        alert("Vui lòng đăng nhập để yêu thích phim.");
                                         onGoAuth();
                                     } else {
                                         toggleWishlist(movie);
@@ -219,6 +311,22 @@ export default function MovieDetail({ movieId, onGoBack, onGoMovie, onGoPerson, 
                                 {inWishlist ? "❤ Đã yêu thích" : "🤍 Yêu thích"}
                             </button>
                             <button className="btnGhost btnGhost--lg">📤 Chia sẻ</button>
+                        </div>
+
+                        <div className="detailInfo__actions" style={{ marginTop: 14 }}>
+                            <button
+                                className={`btnGhost ${myReactions[String(movie.id)] === "like" ? "is-wishlisted" : ""}`}
+                                onClick={() => handleMovieReaction("like")}
+                            >
+                                👍 Thích {reactionStats?.likePercent || 0}%
+                            </button>
+                            <button
+                                className={`btnGhost ${myReactions[String(movie.id)] === "dislike" ? "is-wishlisted" : ""}`}
+                                onClick={() => handleMovieReaction("dislike")}
+                            >
+                                👎 Không thích {reactionStats?.dislikePercent || 0}%
+                            </button>
+                            <span className="muted">{reactionStats?.total || 0} lượt đánh giá</span>
                         </div>
                     </div>
                 </div>
@@ -273,7 +381,7 @@ export default function MovieDetail({ movieId, onGoBack, onGoMovie, onGoPerson, 
                                         className={`starIcon ${(hoverRating || newRating) >= star ? "is-active" : ""}`}
                                         onMouseEnter={() => setHoverRating(star)}
                                         onMouseLeave={() => setHoverRating(0)}
-                                        onClick={() => setNewRating(star)}
+                                        onClick={() => handleRatingClick(star)}
                                     >
                                         ★
                                     </span>
@@ -303,16 +411,18 @@ export default function MovieDetail({ movieId, onGoBack, onGoMovie, onGoPerson, 
                             </div>
                         ) : (
                             <>
-                                {(showAllComments ? comments : comments.slice(0, 3)).map((comment) => (
-                                    <div key={comment.id} className="commentItem">
+                                {(showAllComments ? comments : comments.slice(0, 3)).map((comment) => {
+                                    const username = comment.userId?.username || comment.user || "User";
+                                    return (
+                                    <div key={comment._id || comment.id} className="commentItem">
                                         <div className="commentItem__header">
                                             <div className="commentItem__user">
                                                 <div className="commentItem__avatar">
-                                                    {comment.user.charAt(0)}
+                                                    {username.charAt(0)}
                                                 </div>
-                                                <span>{comment.user}</span>
+                                                <span>{username}</span>
                                             </div>
-                                            <div className="commentItem__date">{comment.date}</div>
+                                            <div className="commentItem__date">{comment.createdAt ? new Date(comment.createdAt).toLocaleDateString() : comment.date}</div>
                                         </div>
                                         <div className="commentItem__rating">
                                             {Array.from({ length: 5 }).map((_, i) => (
@@ -321,9 +431,51 @@ export default function MovieDetail({ movieId, onGoBack, onGoMovie, onGoPerson, 
                                                 </span>
                                             ))}
                                         </div>
-                                        <div className="commentItem__text" style={{ marginTop: "12px" }}>{comment.text}</div>
+                                        <div className="commentItem__text" style={{ marginTop: "12px" }}>{comment.content || comment.text}</div>
+                                        <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
+                                            <button className="linkBtn" onClick={() => handleCommentLike(comment._id)}>
+                                                {comment.isLiked ? "Bỏ thích" : "Thích"} ({comment.likeCount || 0})
+                                            </button>
+                                            <button
+                                                className="linkBtn"
+                                                onClick={() => {
+                                                    setReplyingTo(replyingTo === comment._id ? null : comment._id);
+                                                    setReplyText("");
+                                                }}
+                                            >
+                                                Trả lời ({comment.replyCount || 0})
+                                            </button>
+                                        </div>
+                                        {(comment.replies || []).length > 0 && (
+                                            <div className="commentList" style={{ marginTop: 12, paddingLeft: 24 }}>
+                                                {comment.replies.map((reply) => {
+                                                    const replyUser = reply.userId?.username || "User";
+                                                    return (
+                                                        <div key={reply._id} className="commentItem" style={{ padding: 12 }}>
+                                                            <div className="commentItem__user">
+                                                                <div className="commentItem__avatar">{replyUser.charAt(0)}</div>
+                                                                <span>{replyUser}</span>
+                                                            </div>
+                                                            <div className="commentItem__text" style={{ marginTop: 8 }}>{reply.content}</div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                        {replyingTo === comment._id && (
+                                            <div style={{ marginTop: 12 }}>
+                                                <textarea
+                                                    className="commentInput"
+                                                    placeholder="Viết phản hồi..."
+                                                    value={replyText}
+                                                    onChange={(e) => setReplyText(e.target.value)}
+                                                    style={{ minHeight: 70 }}
+                                                />
+                                                <button className="btnPrimary" onClick={() => handleReplySubmit(comment._id)}>Gửi phản hồi</button>
+                                            </div>
+                                        )}
                                     </div>
-                                ))}
+                                )})}
                                 {comments.length > 3 && (
                                     <button
                                         className="btnGhost"
@@ -350,7 +502,10 @@ export default function MovieDetail({ movieId, onGoBack, onGoMovie, onGoPerson, 
                                     onGoMovie={onGoMovie}
                                     isInWishlist={isInWishlist(m.id)}
                                     onToggleWishlist={() => {
-                                        if (!currentUser) onGoAuth();
+                                        if (!currentUser) {
+                                            alert("Vui lòng đăng nhập để yêu thích phim.");
+                                            onGoAuth();
+                                        }
                                         else toggleWishlist(m);
                                     }}
                                 />
@@ -386,7 +541,10 @@ export default function MovieDetail({ movieId, onGoBack, onGoMovie, onGoPerson, 
                                         onGoMovie={onGoMovie}
                                         isInWishlist={isInWishlist(m.id)}
                                         onToggleWishlist={() => {
-                                            if (!currentUser) onGoAuth();
+                                            if (!currentUser) {
+                                                alert("Vui lòng đăng nhập để yêu thích phim.");
+                                                onGoAuth();
+                                            }
                                             else toggleWishlist(m);
                                         }}
                                     />

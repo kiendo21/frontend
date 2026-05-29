@@ -144,7 +144,9 @@ export async function fetchTVDetail(id) {
         try {
             const dataEN = await get(`/tv/${id}`, { append_to_response: "videos", language: "en-US" });
             videos = dataEN.videos?.results || [];
-        } catch (e) { }
+        } catch {
+            videos = [];
+        }
     }
     const trailer = videos.find(v => v.site === "YouTube" && v.type === "Trailer") || videos.find(v => v.site === "YouTube");
     tv.trailerKey = trailer ? trailer.key : null;

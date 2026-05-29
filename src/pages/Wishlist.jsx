@@ -20,12 +20,12 @@ export default function Wishlist({ onGoMovie }) {
     useEffect(() => {
         const genreIds = getWishlistGenreIds();
         if (genreIds.length === 0) {
-            setRecommendations([]);
+            queueMicrotask(() => setRecommendations([]));
             return;
         }
 
         let cancelled = false;
-        setLoadingRecs(true);
+        queueMicrotask(() => setLoadingRecs(true));
 
         // Use the top 3 genres to fetch recommendations
         const topGenres = genreIds.slice(0, 3);

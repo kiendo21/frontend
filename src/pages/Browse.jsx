@@ -247,7 +247,10 @@ export default function Browse({ onGoMovie, onGoPerson, initialGenreId, onGenreC
                 onGoMovie={onGoMovie}
                 isInWishlist={isInWishlist(movie.id)}
                 onToggleWishlist={() => {
-                  if (!currentUser) onGoAuth();
+                  if (!currentUser) {
+                    alert("Vui lòng đăng nhập để yêu thích phim.");
+                    onGoAuth();
+                  }
                   else toggleWishlist(movie);
                 }}
               />

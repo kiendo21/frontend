@@ -109,9 +109,12 @@ export default function PersonDetail({ personId, onGoBack, onGoMovie, onGoAuth }
                                     onGoMovie={onGoMovie}
                                     isInWishlist={isInWishlist(m.id)}
                                     onToggleWishlist={() => {
-                  if (!currentUser) onGoAuth();
-                  else toggleWishlist(m);
-                }}
+                                        if (!currentUser) {
+                                            alert("Vui lòng đăng nhập để yêu thích phim.");
+                                            onGoAuth();
+                                        }
+                                        else toggleWishlist(m);
+                                    }}
                                 />
                             ))}
                         </div>

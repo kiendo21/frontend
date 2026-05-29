@@ -1,7 +1,7 @@
 import { useApp } from "../context.jsx";
 
 export default function Header({ tab, onChangeTab }) {
-  const { wishlist, currentUser } = useApp();
+  const { currentUser } = useApp();
 
   return (
     <header className="topbar">

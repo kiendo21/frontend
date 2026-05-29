@@ -61,12 +61,12 @@ export default function Chatbot({ onNavigateGenre, onGoMovie }) {
     // Fetch 3 movies for each genre when mood is selected
     useEffect(() => {
         if (!selectedMood) {
-            setGenreMovies({});
+            queueMicrotask(() => setGenreMovies({}));
             return;
         }
 
         const genres = MOOD_MAP[selectedMood];
-        setLoadingMovies(true);
+        queueMicrotask(() => setLoadingMovies(true));
 
         Promise.all(
             genres.map(async (genre) => {
